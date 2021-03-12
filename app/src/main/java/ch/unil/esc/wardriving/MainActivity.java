@@ -25,6 +25,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.Toast;
 
@@ -46,6 +47,7 @@ public class MainActivity extends AppCompatActivity {
     private WifiManager wifiManager;
     private ListView listView;
     private Button buttonScan;
+    private ImageView image;
     private int size = 0;
     private List<ScanResult> results;
     private ArrayList<String> arrayList = new ArrayList<>();
@@ -62,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         buttonScan = findViewById(R.id.scanBtn);
+        image = findViewById(R.id.imageView3);
 
         buttonScan.setOnClickListener(new View.OnClickListener() {
             @Override

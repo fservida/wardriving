@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:orientation="vertical"
     android:padding="10dp"
     android:layout_width="match_parent"
@@ -8,6 +10,18 @@
         android:layout_width="match_parent"
         android:layout_height="50dp"
         />-->
+
+    <ImageView
+        android:id="@+id/imageView3"
+        android:layout_width="match_parent"
+        android:layout_height="283dp"
+        android:layout_weight="0.97"
+        android:contentDescription="Paiiiiiiiiiiiiin"
+        android:visibility="visible"
+        app:srcCompat="@drawable/pain"
+        tools:srcCompat="@drawable/pain"
+        tools:visibility="visible" />
+
     <ListView
         android:id="@+id/wifiList"
         android:layout_width="match_parent"
