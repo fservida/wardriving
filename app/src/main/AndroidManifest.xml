@@ -16,9 +16,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+<!--    Only android API 29+
         <service
             android:name=".WiFiScan"
-            android:foregroundServiceType="location" />
+            android:foregroundServiceType="location"
+        />-->
+        <service
+            android:name=".WiFiScan"
+        />
     </application>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />

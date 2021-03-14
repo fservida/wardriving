@@ -5,23 +5,20 @@ import androidx.core.app.ActivityCompat;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Notification;
-import android.app.PendingIntent;
-import android.app.Service;
 import android.content.pm.PackageManager;
+import android.location.GnssStatus;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 
 // TUTO - https://ssaurel.medium.com/develop-a-wifi-scanner-android-application-daa3b77feb73
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.view.View;
@@ -29,11 +26,13 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.File;
+import org.w3c.dom.Text;
+
 import java.io.FileWriter;
-import java.io.IOException;
+import java.text.BreakIterator;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -56,14 +55,24 @@ public class MainActivity extends AppCompatActivity {
     private ArrayAdapter adapter;
 
     private List<CustomScanResult> all_results;
-    public Timer timer;
 
-    public FileWriter fw;
     static public LocationManager locationManager;
 
-    private boolean scanning = false;
+    //private boolean scanning = false;
 
     private int ONGOING_NOTIFICATION_ID = 1909;
+    private TextView text_gps_latitude;
+    private TextView text_gps_longitude;
+    private TextView text_gps_accuracy;
+    private TextView text_gps_timestamp;
+    private TextView text_gps_timestamp_utc;
+    private Timer timer;
+    //private Intent wifi_scan_intent;
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -72,10 +81,16 @@ public class MainActivity extends AppCompatActivity {
         buttonScan = findViewById(R.id.scanBtn);
         image = findViewById(R.id.imageView3);
 
-        init_gps();
 
-        listView = findViewById(R.id.wifiList);
+        text_gps_latitude = findViewById(R.id.textView4);
+        text_gps_longitude = findViewById(R.id.textView9);
+        text_gps_accuracy = findViewById(R.id.textView11);
+        text_gps_timestamp = findViewById(R.id.textView13);
+        text_gps_timestamp_utc = findViewById(R.id.textView15);
+
         wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+
+        init_gps();
 
         if (!wifiManager.isWifiEnabled()) {
             Toast.makeText(this, "WiFi is disabled ... We need to enable it", Toast.LENGTH_LONG).show();
@@ -83,13 +98,17 @@ public class MainActivity extends AppCompatActivity {
         }
 
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, arrayList);
-        listView.setAdapter(adapter);
+
+        if (MainApplication.scanning) {
+            Log.v("Wardriving", "Scan Already Underway");
+            buttonScan.setText("STOP SCAN");
+        }
 
         buttonScan.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
 
-                if (!scanning) {
+                if (!MainApplication.scanning) {
                     Log.v("Wardriving", "Scanning WiFi");
                     start_scan();
                     buttonScan.setText("STOP SCAN");
@@ -99,12 +118,10 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
-
     }
 
     private void init_gps() {
         this.locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        LocationListener locationListener = new WardrivingLocationListener();
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             // TODO: Consider calling
             //    ActivityCompat#requestPermissions
@@ -115,118 +132,68 @@ public class MainActivity extends AppCompatActivity {
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
-        this.locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER, 1000, 1, locationListener);
-
-        Location location_gps = this.locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-        System.out.println(location_gps);
+        // Need to setup a listener to force research of a GPS fix, else LastKnownLocation will always return a cached location.
+        LocationListener locationListener = new GPSLocationListener();
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 100, 1, locationListener);
+        this.timer = new Timer();
+        this.timer.schedule(new TimerTask() {
+            //https://stackoverflow.com/questions/4612579/call-particular-method-after-regular-interval-of-time
+            @SuppressLint("MissingPermission")
+            @Override
+            public void run() {
+                runOnUiThread(new Runnable(){
+                    @Override
+                    public void run() {
+                        update_location();
+                    }
+                });
+            }
+        }, 0, 2000);
     }
 
     private void stop_scan() {
-        timer.cancel();
-        scanning = false;
+        MainApplication.scanning = false;
+        stopService(MainApplication.wifi_scan_intent);
     }
 
     private void start_scan() {
-        scanning = true;
-
-        // Keep app in foreground (cf. https://developer.android.com/guide/components/foreground-services)
-        Intent notificationIntent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent =
-                PendingIntent.getActivity(this, 0, notificationIntent, 0);
-
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HHmmssZ", Locale.US);
-        String filename = sdf.format(new Date()) + "_wardriving_log.csv";
-        // https://stackoverflow.com/questions/15402976/how-to-create-a-csv-file-in-android
-        //File folder = new File(Environment.getExternalStorageDirectory()
-        //        + "/ch.unil.esc.wardriving");
-        File folder = new File(String.valueOf(getExternalFilesDir(null)));
-        filename = folder.toString() + "/" + filename;
-        boolean var = false;
-        if (!folder.exists())
-            System.out.println("Creating Dir");
-        var = folder.mkdir();
-        System.out.println("" + var);
-        System.out.println("" + filename);
-
-        try {
-            this.fw = new FileWriter(filename);
-            fw.append(CustomScanResult.csv_headers());
-            arrayList.clear();
-            registerReceiver(wifiReceiver, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
-            //wifiManager.startScan();
-            Toast.makeText(this, "Scanning WiFi ...", Toast.LENGTH_SHORT).show();
-            this.timer = new Timer();
-            this.timer.schedule(new TimerTask() {
-                //https://stackoverflow.com/questions/4612579/call-particular-method-after-regular-interval-of-time
-                @Override
-                public void run() {
-                    wifiManager.startScan();
-                    Log.v("Wardriving", "Scanning");
-                }
-            }, 0, 2000);
-        } catch (IOException e) {
-            Toast.makeText(this, "Error Creating Log File", Toast.LENGTH_SHORT).show();
-            e.printStackTrace();
-        }
-
+        MainApplication.scanning = true;
+        MainApplication.wifi_scan_intent = new Intent(this, WiFiScan.class);
+        startService(MainApplication.wifi_scan_intent);
     }
 
-    final BroadcastReceiver wifiReceiver = new BroadcastReceiver() {
+    public void update_location() {
+        @SuppressLint("MissingPermission") Location loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
 
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            results = wifiManager.getScanResults();
+        float accuracy = loc.getAccuracy();
+        long timestamp = loc.getTime();
+        double longitude = loc.getLongitude();
+        double latitude = loc.getLatitude();
 
-            try {
-                Location locationGPS = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                System.out.println(locationGPS);
-                if (locationGPS != null) {
-                    for (ScanResult scanResult : results) {
-                        long real_timestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (scanResult.timestamp / 1000);
-                        CustomScanResult custom_result = new CustomScanResult(scanResult.BSSID, scanResult.SSID, scanResult.frequency, scanResult.level, real_timestamp);
-                        custom_result.add_location(locationGPS.getLatitude(), locationGPS.getLongitude(), locationGPS.getAccuracy(), locationGPS.getTime());
-                        String csv_line = custom_result.to_csv();
-                        arrayList.add(csv_line);
-                        adapter.notifyDataSetChanged();
-                        fw.append(csv_line);
-                    }
-                } else {
-                    Toast.makeText(MainActivity.super.getBaseContext(), "No GPS Fix", Toast.LENGTH_SHORT).show();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HHmmssZ", Locale.US);
+        String fix_datetime = sdf.format(new Date(timestamp));
 
-        ;
-    };
+        text_gps_latitude.setText(String.valueOf(latitude));
+        text_gps_longitude.setText(String.valueOf(longitude));
+        text_gps_accuracy.setText(String.valueOf(accuracy));
+        text_gps_timestamp.setText(String.valueOf(timestamp));
+        text_gps_timestamp_utc.setText(fix_datetime);
+    }
 
-    private class WardrivingLocationListener implements LocationListener {
+    private class GPSLocationListener implements LocationListener {
 
         @Override
         public void onLocationChanged(Location loc) {
-            String TAG = "Wardriving";
-            float accuracy = loc.getAccuracy();
-            double longitude = loc.getLongitude();
-            double latitude = loc.getLatitude();
-            String longitude_str = "Longitude: " + longitude;
-            Log.v(TAG, longitude_str);
-            String latitude_str = "Latitude: " + latitude;
-            Log.v(TAG, latitude_str);
+            Log.v("Wardriving", "Received Location Update on Main Activity");
         }
 
         @Override
-        public void onProviderDisabled(String provider) {
-        }
+        public void onProviderDisabled(String provider) {}
 
         @Override
-        public void onProviderEnabled(String provider) {
-        }
+        public void onProviderEnabled(String provider) {}
 
         @Override
-        public void onStatusChanged(String provider, int status, Bundle extras) {
-        }
+        public void onStatusChanged(String provider, int status, Bundle extras) {}
     }
 }
