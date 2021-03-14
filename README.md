@@ -1,5 +1,5 @@
 # Wardriving
-[![Build Status](https://travis-ci.com/fservida/gemino.svg?branch=travis)](https://travis-ci.com/fservida/gemino)
+[![Build Status](https://travis-ci.com/fservida/wardriving.svg?branch=travis)](https://travis-ci.com/fservida/wardriving)
 
 Basic Android App to scan and log all detected Wifi Access points to a csv file in the app external data directory (SDCard/Emulated).
 
